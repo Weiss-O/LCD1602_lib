@@ -1,3 +1,8 @@
+//Library for the LCD1602 display in 4-bit mode
+//Writing this was largely assisted by AI tools, so generated code may be influenced by others.
+//It was written to be compatible with the Arduino IDE and was done as a learning exercise.
+//Current implementation was based off of the datasheet https://www.waveshare.com/datasheet/LCD_en_PDF/LCD1602.pdf
+
 #include "LCD1602.h"
 
 // Constructor for 4-bit mode (assume rw wired to GND)
