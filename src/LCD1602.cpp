@@ -1,3 +1,8 @@
+//Library for the LCD1602 display in 4-bit mode
+//Writing this was largely assisted by AI tools, so generated code may be influenced by others.
+//It was written to be compatible with the Arduino IDE and was done as a learning exercise.
+//Current implementation was based off of the datasheet https://www.waveshare.com/datasheet/LCD_en_PDF/LCD1602.pdf
+
 #include "LCD1602.h"
 
 // Constructor for 4-bit mode (assume rw wired to GND)
@@ -5,6 +10,8 @@ LCD1602::LCD1602(uint8_t rs, uint8_t enable,
                  uint8_t d4, uint8_t d5, uint8_t d6, uint8_t d7)
   : _rs(rs), _rw(255), _enable(enable), _displayFunction(0x00),
     _entryMode(0x00){
+  // Initialize all data pins to zero
+  for (int i = 0; i < 8; i++) _dataPins[i] = 0;
   _dataPins[4] = d4;
   _dataPins[5] = d5;
   _dataPins[6] = d6;
@@ -23,7 +30,7 @@ void LCD1602::begin(uint8_t cols, uint8_t rows) {
   if (_rw != 255) pinMode(_rw, OUTPUT);
   pinMode(_enable, OUTPUT);
   for (int i = 0; i < 8; i++)
-    if (_dataPins[i]) pinMode(_dataPins[i], OUTPUT);
+    if (_dataPins[i]) pinMode(_dataPins[i], OUTPUT); //FIXME: This will break if using GPIO pin 0
   // Pull enable low to start
   digitalWrite(_enable, LOW);
 
@@ -73,6 +80,7 @@ void LCD1602::home() {
 
 void LCD1602::setCursor(uint8_t col, uint8_t row) {
   static uint8_t rowOffsets[] = { 0x00, 0x40, 0x14, 0x54 };
+  if (row >= 4) row = 3; // Clamp to max row index
   send(0x80 | (col + rowOffsets[row]), 0);
 }
 
@@ -85,9 +93,9 @@ size_t LCD1602::write(uint8_t c) {
   send(value, 1);
   return 1;
 }
-
 void LCD1602::print(const char *s) {
-  while (*s != NULL) write(*s++);
+  while (*s != '\0') write(*s++);
+}
 }
 
 //Follows the order of operations for the write protocol
@@ -110,17 +118,19 @@ void LCD1602::send(uint8_t value, uint8_t mode) {
   delayMicroseconds(COMMAND_E_CYCLE);
 }
 
+// Writes a 4-bit nibble to the LCD, mapping bits 0-3 to D4-D7 (not D0-D3)
 void LCD1602::write4bits(uint8_t nibble) {
   for (int i = 0; i < 4; i++) {
-    //Right shift based on current bit then mask with 0x01
+    // Right shift based on current bit then mask with 0x01; maps to D4-D7
     digitalWrite(_dataPins[i+4], (nibble >> i) & 0x01); 
   }
   pulseEnable();
 }
-
 void LCD1602::pulseEnable() {
-  //Since a digitalWrite takes 3.4us >> t_pw = 0.45us, we don't need any delays
+  // According to the LCD1602 datasheet, the minimum enable pulse width (t_pw) is 450ns.
+  // Since digitalWrite takes approximately 3.4us, this satisfies the datasheet timing requirements.
   digitalWrite(_enable, LOW);
   digitalWrite(_enable, HIGH);
   digitalWrite(_enable, LOW);
+}
 }
