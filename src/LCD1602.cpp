@@ -48,29 +48,28 @@ void LCD1602::begin(uint8_t cols, uint8_t rows) {
     init4bit();
   }
   // Set the display mode (display lines and character font)
-  if(_debug) {
-    Serial.print("Setting display function: ");
-    Serial.println(WRITE_DISPLAY_SETTINGS | _displayFunction, BIN);
-  }
+  // if(_debug) {
+  //   Serial.print("Setting display function: ");
+  //   Serial.println(WRITE_DISPLAY_SETTINGS | _displayFunction, BIN);
+  // }
   send(WRITE_DISPLAY_SETTINGS | _displayFunction, 0);
-  delay(1000);
+  delayMicroseconds(COMMAND_E_CYCLE);
   //Display off
   turnOff();
-  delay(1000);
   //clear display
-  if(_debug) {
-    Serial.print("Clearing display: ");
-    Serial.println(CLEAR_DISPLAY, BIN);
-  }
+  // if(_debug) {
+  //   Serial.print("Clearing display: ");
+  //   Serial.println(CLEAR_DISPLAY, BIN);
+  // }
   send(CLEAR_DISPLAY, 0);
-  delay(1000);
+  delayMicroseconds(COMMAND_E_CYCLE);
   //Entry mode set
-  if(_debug) {
-    Serial.print("Setting entry mode: ");
-    Serial.println(WRITE_ENTRY_MODE_SETTINGS | _entryMode, BIN);
-  }
+  // if(_debug) {
+  //   Serial.print("Setting entry mode: ");
+  //   Serial.println(WRITE_ENTRY_MODE_SETTINGS | _entryMode, BIN);
+  // }
   send(WRITE_ENTRY_MODE_SETTINGS | _entryMode, 0);
-  delay(1000);
+  delayMicroseconds(COMMAND_E_CYCLE);
 }
 
 void LCD1602::init4bit() {
@@ -86,35 +85,35 @@ void LCD1602::init4bit() {
     Serial.print("Initializing LCD in 4-bit mode... ");
     Serial.println(INIT_COMMAND >> 4, BIN);
   } 
-  delay(2); // Wait > 100 us
+  delayMicroseconds(100); // Wait > 100 us
   write4bits(INIT_COMMAND >> 4); // Send 0x30 again
     if (_debug) {
     Serial.print("Initializing LCD in 4-bit mode... ");
     Serial.println(INIT_COMMAND >> 4, BIN);
   } 
-  delay(2); // This delay may not be necessary, none is specified in the datasheet
-  if(_debug) {
-    Serial.print("Setting LCD to 4-bit mode... ");
-    Serial.println((WRITE_DISPLAY_SETTINGS & ~BIT_MODE_FLAG_8) >> 4, BIN);
-  }
+  delayMicroseconds(COMMAND_E_CYCLE); // This delay may not be necessary, none is specified in the datasheet
+  // if(_debug) {
+  //   Serial.print("Setting LCD to 4-bit mode... ");
+  //   Serial.println((WRITE_DISPLAY_SETTINGS & ~BIT_MODE_FLAG_8) >> 4, BIN);
+  // }
   write4bits((WRITE_DISPLAY_SETTINGS & ~BIT_MODE_FLAG_8) >> 4); // Send 0x20 to set 4-bit mode
-  delay(2);
+  delayMicroseconds(COMMAND_E_CYCLE);
 }
 
 void LCD1602::clear() {
-  send(0x01, 0);
-  delayMicroseconds(2000);
+  send(CLEAR_DISPLAY, 0);
+  delayMicroseconds(COMMAND_E_CYCLE);
 }
 
 //Cursor Return function on datasheet
 void LCD1602::home() {
   send(0x02, 0);
-  delayMicroseconds(2000);
+  delayMicroseconds(COMMAND_E_CYCLE);
 }
 
 void LCD1602::setCursor(uint8_t col, uint8_t row) {
-  static uint8_t rowOffsets[] = { 0x00, 0x40, 0x14, 0x54 };
-  if (row >= 4) row = 3; // Clamp to max row index
+  static uint8_t rowOffsets[] = { 0x00, 0x28};
+  if (row >= 2) row = 1; // Clamp to max row index
   send(0x80 | (col + rowOffsets[row]), 0);
 }
 
@@ -124,19 +123,49 @@ void LCD1602::setCursor(uint8_t col, uint8_t row) {
 // I think that upper nibble 0001 is undefined?
 size_t LCD1602::write(uint8_t c) {
   uint8_t value = mapCharToLCD(c);
-  if(_debug){
-    Serial.print("Sending to LCD: ");
-    Serial.print(value, BIN);  // print binary format
-    Serial.print(" (0x");
-    Serial.print(value, HEX);  // print hex format too
-    Serial.print(") ");
-    Serial.println((char)value); // print character representation
-  }
+  // if(_debug){
+  //   Serial.print("Sending to LCD: ");
+  //   Serial.print(value, BIN);  // print binary format
+  //   Serial.print(" (0x");
+  //   Serial.print(value, HEX);  // print hex format too
+  //   Serial.print(") ");
+  //   Serial.println((char)value); // print character representation
+  // }
   send(value, 1);
   return 1;
 }
-void LCD1602::print(const char *s) {
-  while (*s != '\0') write(*s++);
+
+void LCD1602::print(const char *s, uint8_t row, uint8_t col) {
+  while (*s && row < _rows) {
+    int startCol = (row == 0) ? col : 0;
+    int spaceRemaining = _cols - startCol;
+    int charsToPrint = 0;
+    int lastSpaceIdx = -1;
+
+    // Measure how many characters fit on this line
+    while (s[charsToPrint] && charsToPrint < spaceRemaining) {
+      if (s[charsToPrint] == ' ') {
+        lastSpaceIdx = charsToPrint;
+      }
+      charsToPrint++;
+    }
+
+    // Wrap at last space if possible
+    if (charsToPrint == spaceRemaining && lastSpaceIdx != -1) {
+      charsToPrint = lastSpaceIdx;
+    }
+
+    // Print the chunk
+    setCursor(startCol, row);
+    for (int i = 0; i < charsToPrint; i++) {
+      write(*s++);
+    }
+
+    // Skip trailing space (if any)
+    if (*s == ' ') s++;
+
+    row++;
+  }
 }
 
 
@@ -154,31 +183,29 @@ void LCD1602::send(uint8_t value, uint8_t mode) {
   } else {
     // 4-bit mode: high nibble, then low nibble
     write4bits(value >> 4); //right-shift four to get higher nibble
-    delay(50);
     write4bits(value & 0x0F); // & with 0x0F to remove high nibble
-    delay(100);
   }
   //Delay for command cycle time
   delayMicroseconds(COMMAND_E_CYCLE);
 }
 
 void LCD1602::turnOff() {
-  if(_debug) {
-    Serial.print("Turning display off: ");
-    Serial.println(DISPLAY_OFF, BIN);
-  }
+  // if(_debug) {
+  //   Serial.print("Turning display off: ");
+  //   Serial.println(DISPLAY_OFF, BIN);
+  // }
   send(DISPLAY_OFF, 0);
-  delay(1000); // Wait for the display to turn off
+  delayMicroseconds(COMMAND_E_CYCLE); // Wait for the display to turn off
 }
 
 // Turn on the display
 void LCD1602::turnOn() {
-  if(_debug) {
-    Serial.print("Turning display on: ");
-    Serial.println(DISPLAY_ON, BIN);
-  }
+  // if(_debug) {
+  //   Serial.print("Turning display on: ");
+  //   Serial.println(DISPLAY_ON, BIN);
+  // }
   send(DISPLAY_ON, 0); // Turn on the display
-  delay(1000); // Wait for the display to turn on
+  delayMicroseconds(COMMAND_E_CYCLE); // Wait for the display to turn on
 }
 
 // Writes a 4-bit nibble to the LCD, mapping bits 0-3 to D4-D7 (not D0-D3)

@@ -41,7 +41,7 @@ public:
 	void home();
 	void setCursor(uint8_t col, uint8_t row);
 	size_t write(uint8_t);	//for Print compatibility
-	void print(const char *s);
+	void print(const char *s, uint8_t row = 0, uint8_t col = 0);
 	void turnOff();
 	void turnOn();
 private:
