@@ -7,20 +7,21 @@
 
 // Constructor for 4-bit mode (assume rw wired to GND)
 LCD1602::LCD1602(uint8_t rs, uint8_t enable,
-                 uint8_t d4, uint8_t d5, uint8_t d6, uint8_t d7)
+                 uint8_t d4, uint8_t d5, uint8_t d6, uint8_t d7,
+                 bool debug = false)
   : _rs(rs), _rw(255), _enable(enable), _displayFunction(0x00),
-    _entryMode(0x00){
+    _entryMode(0x00), _debug(debug){
   // Initialize all data pins to zero
   for (int i = 0; i < 8; i++) _dataPins[i] = 0;
   _dataPins[4] = d4;
   _dataPins[5] = d5;
   _dataPins[6] = d6;
   _dataPins[7] = d7;
-  _displayFunction |= 4_BIT_MODE_FLAG; // Set DL (data lines) to 4-bit mode
-  _displayFunction |= 2_ROW_FLAG; // Assume 2-row display
-  _displayFunction |= FONT_5x10_FLAG; // Use 5x10 font
+  _displayFunction |= BIT_MODE_FLAG_4; // Set DL (data lines) to 4-bit mode
+  _displayFunction |= ROW_FLAG_2; // Assume 2-row display
+  _displayFunction &= ~FONT_5x11_FLAG; // Use 5x8 font
 
-  _entryMode |= ENTRY_RIGHT | ENTRY_SHIFT; // Default entry mode: cursor moves right
+  _entryMode |= ENTRY_RIGHT; // Default entry mode: cursor moves right
 }
 
 
@@ -40,31 +41,64 @@ void LCD1602::begin(uint8_t cols, uint8_t rows) {
   // Need to send (Instruction Set)
   // RS | RW | D7 | D6 | D5 | D4
   // 0  | 0  | 0  | 0  | 1  | 1 
-  if(_displayFunction & 8_BIT_MODE_FLAG) {
+  if(_displayFunction & BIT_MODE_FLAG_8) {
     //TODO: Write the 8-bit initialization sequence
   } else {
     // 4-bit mode initialization
     init4bit();
   }
   // Set the display mode (display lines and character font)
+  if(_debug) {
+    Serial.print("Setting display function: ");
+    Serial.println(WRITE_DISPLAY_SETTINGS | _displayFunction, BIN);
+  }
   send(WRITE_DISPLAY_SETTINGS | _displayFunction, 0);
+  delay(1000);
   //Display off
-  send(DISPLAY_OFF, 0);
+  turnOff();
+  delay(1000);
   //clear display
+  if(_debug) {
+    Serial.print("Clearing display: ");
+    Serial.println(CLEAR_DISPLAY, BIN);
+  }
   send(CLEAR_DISPLAY, 0);
+  delay(1000);
   //Entry mode set
+  if(_debug) {
+    Serial.print("Setting entry mode: ");
+    Serial.println(WRITE_ENTRY_MODE_SETTINGS | _entryMode, BIN);
+  }
   send(WRITE_ENTRY_MODE_SETTINGS | _entryMode, 0);
+  delay(1000);
 }
 
 void LCD1602::init4bit() {
   //Now we send the command during init, we are in 8-bit mode so 1 pulse
-  write4bits(INIT_COMMAND >> 4, 0); // Send upper nibble
+  if (_debug) {
+    Serial.print("Initializing LCD in 4-bit mode... ");
+    Serial.println(INIT_COMMAND >> 4, BIN);
+  } 
+  write4bits(INIT_COMMAND >> 4); // Send upper nibble
   delay(5); // Wait > 4.1ms
-  write4bits(INIT_COMMAND >> 4, 0); // Send 0x30 again
-  delay(1); // Wait > 100 us
-  write4bits(INIT_COMMAND >> 4, 0); // Send 0x30 again
-  delay(1); // This delay may not be necessary, none is specified in the datasheet
-  write4bits((WRITE_DISPLAY_SETTINGS & ~8_BIT_MODE_FLAG) >> 4, 0); // Send 0x20 to set 4-bit mode
+  write4bits(INIT_COMMAND >> 4); // Send 0x30 again
+    if (_debug) {
+    Serial.print("Initializing LCD in 4-bit mode... ");
+    Serial.println(INIT_COMMAND >> 4, BIN);
+  } 
+  delay(2); // Wait > 100 us
+  write4bits(INIT_COMMAND >> 4); // Send 0x30 again
+    if (_debug) {
+    Serial.print("Initializing LCD in 4-bit mode... ");
+    Serial.println(INIT_COMMAND >> 4, BIN);
+  } 
+  delay(2); // This delay may not be necessary, none is specified in the datasheet
+  if(_debug) {
+    Serial.print("Setting LCD to 4-bit mode... ");
+    Serial.println((WRITE_DISPLAY_SETTINGS & ~BIT_MODE_FLAG_8) >> 4, BIN);
+  }
+  write4bits((WRITE_DISPLAY_SETTINGS & ~BIT_MODE_FLAG_8) >> 4); // Send 0x20 to set 4-bit mode
+  delay(2);
 }
 
 void LCD1602::clear() {
@@ -90,13 +124,21 @@ void LCD1602::setCursor(uint8_t col, uint8_t row) {
 // I think that upper nibble 0001 is undefined?
 size_t LCD1602::write(uint8_t c) {
   uint8_t value = mapCharToLCD(c);
+  if(_debug){
+    Serial.print("Sending to LCD: ");
+    Serial.print(value, BIN);  // print binary format
+    Serial.print(" (0x");
+    Serial.print(value, HEX);  // print hex format too
+    Serial.print(") ");
+    Serial.println((char)value); // print character representation
+  }
   send(value, 1);
   return 1;
 }
 void LCD1602::print(const char *s) {
   while (*s != '\0') write(*s++);
 }
-}
+
 
 //Follows the order of operations for the write protocol
 void LCD1602::send(uint8_t value, uint8_t mode) {
@@ -104,18 +146,39 @@ void LCD1602::send(uint8_t value, uint8_t mode) {
   if (_rw != 255) digitalWrite(_rw, LOW);
 
   if (_displayFunction & 0x10) {
-    // 4-bit mode: high nibble, then low nibble
-    write4bits(value >> 4); //right-shift four to get higher nibble
-    write4bits(value & 0x0F); // & with 0x0F to remove high nibble
-  } else {
     // 8-bit mode: all eight bits at once
     for (int i = 0; i < 8; i++){
       digitalWrite(_dataPins[i], (value >> i) & 0x01);
     }
     pulseEnable();
+  } else {
+    // 4-bit mode: high nibble, then low nibble
+    write4bits(value >> 4); //right-shift four to get higher nibble
+    delay(50);
+    write4bits(value & 0x0F); // & with 0x0F to remove high nibble
+    delay(100);
   }
   //Delay for command cycle time
   delayMicroseconds(COMMAND_E_CYCLE);
+}
+
+void LCD1602::turnOff() {
+  if(_debug) {
+    Serial.print("Turning display off: ");
+    Serial.println(DISPLAY_OFF, BIN);
+  }
+  send(DISPLAY_OFF, 0);
+  delay(1000); // Wait for the display to turn off
+}
+
+// Turn on the display
+void LCD1602::turnOn() {
+  if(_debug) {
+    Serial.print("Turning display on: ");
+    Serial.println(DISPLAY_ON, BIN);
+  }
+  send(DISPLAY_ON, 0); // Turn on the display
+  delay(1000); // Wait for the display to turn on
 }
 
 // Writes a 4-bit nibble to the LCD, mapping bits 0-3 to D4-D7 (not D0-D3)
@@ -126,6 +189,7 @@ void LCD1602::write4bits(uint8_t nibble) {
   }
   pulseEnable();
 }
+
 void LCD1602::pulseEnable() {
   // According to the LCD1602 datasheet, the minimum enable pulse width (t_pw) is 450ns.
   // Since digitalWrite takes approximately 3.4us, this satisfies the datasheet timing requirements.
@@ -133,4 +197,10 @@ void LCD1602::pulseEnable() {
   digitalWrite(_enable, HIGH);
   digitalWrite(_enable, LOW);
 }
+
+inline uint8_t mapCharToLCD(uint8_t c) {
+	if (c < FIRST_CHAR_ASCII || c > LAST_CHAR_ASCII) {
+		return 0xFF; // Return 0xFF for characters outside the LCD character set (displays full block)
+	}
+	return c; // Map character to LCD character set
 }
