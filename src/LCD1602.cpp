@@ -135,38 +135,35 @@ size_t LCD1602::write(uint8_t c) {
   return 1;
 }
 
-void LCD1602::print(const char *s, uint8_t row, uint8_t col) {
+void LCD1602::print(const char *s) {
+  int row = 0;
   while (*s && row < _rows) {
-    int startCol = (row == 0) ? col : 0;
-    int spaceRemaining = _cols - startCol;
-    int charsToPrint = 0;
-    int lastSpaceIdx = -1;
+    // Try to fit up to _cols chars without breaking a word
+    int len = 0;
+    int lastSpace = -1;
+    const char *p = s;
 
-    // Measure how many characters fit on this line
-    while (s[charsToPrint] && charsToPrint < spaceRemaining) {
-      if (s[charsToPrint] == ' ') {
-        lastSpaceIdx = charsToPrint;
-      }
-      charsToPrint++;
+    while (*p && len < _cols) {
+      if (*p == ' ') lastSpace = len;
+      p++;
+      len++;
     }
 
-    // Wrap at last space if possible
-    if (charsToPrint == spaceRemaining && lastSpaceIdx != -1) {
-      charsToPrint = lastSpaceIdx;
-    }
+    // If the word runs past the end of the line, wrap at last space
+    int wrap = (len == _cols && lastSpace != -1) ? lastSpace : len;
 
-    // Print the chunk
-    setCursor(startCol, row);
-    for (int i = 0; i < charsToPrint; i++) {
+    setCursor(0, row);
+    for (int i = 0; i < wrap; i++) {
       write(*s++);
     }
 
-    // Skip trailing space (if any)
+    // Skip over trailing space (optional)
     if (*s == ' ') s++;
 
     row++;
   }
 }
+
 
 
 //Follows the order of operations for the write protocol
